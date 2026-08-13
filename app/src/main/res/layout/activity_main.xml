@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -11,84 +12,128 @@
         android:padding="24dp">
 
         <TextView
-            android:id="@+id/title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="WiFi Vision"
-            android:textSize="30sp"
+            android:textSize="40sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Wi-Fi sensing prototype"
-            android:textSize="15sp" />
+            android:text="Wi-Fi presence &amp; movement sensing"
+            android:textSize="18sp"
+            android:layout_marginTop="4dp" />
 
         <TextView
             android:id="@+id/status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:padding="16dp"
             android:text="Ready"
-            android:textSize="17sp"
-            android:textStyle="bold" />
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginTop="35dp"
+            android:layout_marginBottom="30dp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
             android:text="Connected network"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/ssid"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="SSID: --"
-            android:textSize="18sp" />
-
-        <TextView
-            android:id="@+id/rssi"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="RSSI: -- dBm"
             android:textSize="28sp"
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/quality"
-            android:layout_width="match_parent"
+            android:id="@+id/ssid"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Signal quality: --"
-            android:textSize="16sp" />
+            android:text="SSID: Unknown"
+            android:textSize="24sp"
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:id="@+id/rssi"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="RSSI: unavailable"
+            android:textSize="34sp"
+            android:textStyle="bold"
+            android:layout_marginTop="10dp" />
+
+        <TextView
+            android:id="@+id/quality"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Signal quality: unavailable"
+            android:textSize="20sp"
+            android:layout_marginTop="4dp" />
 
         <Button
             android:id="@+id/measureButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="MEASURE WI-FI" />
+            android:text="MEASURE WI-FI"
+            android:textSize="18sp"
+            android:layout_marginTop="28dp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="30dp"
-            android:text="Nearby networks"
+            android:text="Presence sensing"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginTop="38dp" />
+
+        <TextView
+            android:id="@+id/sensingResult"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Start sensing to monitor signal changes"
             android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:gravity="center"
+            android:padding="20dp"
+            android:layout_marginTop="15dp" />
+
+        <TextView
+            android:id="@+id/stability"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Stability: --"
+            android:textSize="19sp"
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:id="@+id/fluctuation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Fluctuation: --"
+            android:textSize="19sp"
+            android:layout_marginTop="6dp" />
+
+        <Button
+            android:id="@+id/sensingButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="START SENSING"
+            android:textSize="18sp"
+            android:layout_marginTop="18dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Nearby networks"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginTop="40dp" />
 
         <TextView
             android:id="@+id/networks"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="No scan performed yet."
-            android:textSize="15sp" />
+            android:text="No networks found."
+            android:textSize="19sp"
+            android:layout_marginTop="15dp" />
 
     </LinearLayout>
 
