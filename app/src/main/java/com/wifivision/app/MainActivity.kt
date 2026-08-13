@@ -25,6 +25,7 @@ class MainActivity : Activity() {
     private lateinit var measureButton: Button
     private lateinit var sensingButton: Button
     private lateinit var sensingResult: TextView
+    private lateinit var signalWave: SignalWaveView
     private lateinit var stability: TextView
     private lateinit var fluctuation: TextView
 
@@ -60,7 +61,7 @@ class MainActivity : Activity() {
         sensingResult = findViewById(R.id.sensingResult)
         stability = findViewById(R.id.stability)
         fluctuation = findViewById(R.id.fluctuation)
-
+        signalWave = findViewById(R.id.signalWave)
         measureButton.setOnClickListener {
             measureWifi()
         }
@@ -221,6 +222,11 @@ private fun collectSignalSample() {
 
         rssi.text = "RSSI: $currentRssi dBm"
 
+        val waveSignal =
+    ((currentRssi + 100) * 2)
+        .coerceIn(0, 100)
+
+signalWave.updateSignal(waveSignal.toFloat())
         // Need enough samples to establish a baseline.
         if (samples.size < 10) {
             sensingResult.text =
