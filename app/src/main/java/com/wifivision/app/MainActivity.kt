@@ -320,3 +320,5 @@ private fun collectSignalSample() {
             "Unable to read Wi-Fi signal"
     }
 }
+
+}
