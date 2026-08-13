@@ -201,96 +201,122 @@ class MainActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun collectSignalSample() {
+private fun collectSignalSample() {
 
-        try {
+    try {
+        val info = wifiManager.connectionInfo
+        val currentRssi = info.rssi
 
-            val info = wifiManager.connectionInfo
-            val currentRssi = info.rssi
-
-            if (currentRssi <= -100) {
-                return
-            }
-
-            samples.addLast(currentRssi)
-
-            while (samples.size > 20) {
-                samples.removeFirst()
-            }
-
-            rssi.text = "RSSI: $currentRssi dBm"
-
-            if (samples.size < 5) {
-                sensingResult.text =
-                    "🟡 Calibrating signal...\n${samples.size}/5 samples"
-                return
-            }
-
-            val values = samples.toList()
-
-            val mean =
-                values.average()
-
-            val variance =
-                values.map {
-                    (it - mean) * (it - mean)
-                }.average()
-
-            val standardDeviation =
-                sqrt(variance)
-
-            val range =
-                values.maxOrNull()!! - values.minOrNull()!!
-
-            val movementScore =
-                ((standardDeviation * 20) + (range * 2))
-                    .coerceIn(0.0, 100.0)
-
-            val stabilityScore =
-                (100.0 - movementScore)
-                    .coerceIn(0.0, 100.0)
-
-            fluctuation.text =
-                "Fluctuation: ${movementScore.toInt()}%"
-
-            stability.text =
-                "Stability: ${stabilityScore.toInt()}%"
-
-            when {
-                movementScore < 20 -> {
-                    sensingResult.text =
-                        "🟢 Signal stable\nNo significant movement detected"
-                }
-
-                movementScore < 50 -> {
-                    sensingResult.text =
-                        "🟡 Signal changing\nPossible movement detected"
-                }
-
-                else -> {
-                    sensingResult.text =
-                        "🟠 Strong signal changes\nSignificant movement detected"
-                }
-            }
-
-        } catch (_: SecurityException) {
-
-            sensingResult.text =
-                "Wi-Fi permission required"
-
-        } catch (_: Exception) {
-
-            sensingResult.text =
-                "Unable to read Wi-Fi signal"
+        if (currentRssi <= -100) {
+            sensingResult.text = "⚪ Signal unavailable"
+            return
         }
-    }
 
-    override fun onDestroy() {
+        samples.addLast(currentRssi)
 
-        sensing = false
-        handler.removeCallbacks(sensingRunnable)
+        // Keep the latest 30 seconds of measurements.
+        while (samples.size > 30) {
+            samples.removeFirst()
+        }
 
-        super.onDestroy()
+        rssi.text = "RSSI: $currentRssi dBm"
+
+        // Need enough samples to establish a baseline.
+        if (samples.size < 10) {
+            sensingResult.text =
+                "🟡 Calibrating environment...\n" +
+                "${samples.size}/10 samples"
+
+            stability.text = "Stability: --"
+            fluctuation.text = "Fluctuation: --"
+            return
+        }
+
+        val values = samples.toList()
+
+        // First 10 samples form the initial baseline.
+        val baselineCount = minOf(10, values.size)
+        val baseline =
+            values.take(baselineCount).average()
+
+        val recent =
+            values.takeLast(10)
+
+        val recentAverage =
+            recent.average()
+
+        // How far the recent signal moved from baseline.
+        val signalChange =
+            abs(recentAverage - baseline)
+
+        // Measure short-term signal variation.
+        val mean = recent.average()
+
+        val variance =
+            recent.map {
+                (it - mean) * (it - mean)
+            }.average()
+
+        val standardDeviation =
+            sqrt(variance)
+
+        // Combine sustained change and local fluctuation.
+        val movementScore =
+            (
+                signalChange * 12.0 +
+                standardDeviation * 10.0
+            ).coerceIn(0.0, 100.0)
+
+        val stabilityScore =
+            (
+                100.0 - movementScore
+            ).coerceIn(0.0, 100.0)
+
+        fluctuation.text =
+            "Fluctuation: ${movementScore.toInt()}%"
+
+        stability.text =
+            "Stability: ${stabilityScore.toInt()}%"
+
+        when {
+
+            movementScore < 20 -> {
+
+                sensingResult.text =
+                    "🟢 Environment stable\n" +
+                    "No significant signal movement"
+            }
+
+            movementScore < 45 -> {
+
+                sensingResult.text =
+                    "🟡 Possible activity\n" +
+                    "Signal is changing"
+            }
+
+            movementScore < 70 -> {
+
+                sensingResult.text =
+                    "🟠 Movement likely\n" +
+                    "Sustained Wi-Fi changes detected"
+            }
+
+            else -> {
+
+                sensingResult.text =
+                    "🔴 Strong activity\n" +
+                    "Large sustained signal changes detected"
+            }
+        }
+
+    } catch (_: SecurityException) {
+
+        sensingResult.text =
+            "Wi-Fi permission required"
+
+    } catch (_: Exception) {
+
+        sensingResult.text =
+            "Unable to read Wi-Fi signal"
     }
 }
-
