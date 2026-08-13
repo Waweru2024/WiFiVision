@@ -84,6 +84,19 @@
             android:textStyle="bold"
             android:layout_marginTop="38dp" />
 
+<TextView
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Wi-Fi Signal Wave"
+    android:textSize="22sp"
+    android:textStyle="bold"
+    android:layout_marginTop="20dp" />
+
+<com.wifivision.app.SignalWaveView
+    android:id="@+id/signalWave"
+    android:layout_width="match_parent"
+    android:layout_height="180dp"
+    android:layout_marginTop="12dp" />
         <TextView
             android:id="@+id/sensingResult"
             android:layout_width="match_parent"
