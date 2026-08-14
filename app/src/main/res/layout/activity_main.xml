@@ -1,863 +1,340 @@
-package com.wifivision.app
-
-import android.content.Context
-import android.graphics.*
-import android.util.AttributeSet
-import android.view.MotionEvent
-import android.view.View
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
-
-class HeatmapView @JvmOverloads constructor(
-    context: Context,
-    attrs: AttributeSet? = null
-) : View(context, attrs) {
-
-    private data class SignalPoint(
-        val x: Float,
-        val y: Float,
-        val strength: Float,
-        val timestamp: Long
-    )
-
-    private data class MovementEvent(
-        val x: Float,
-        val y: Float,
-        val change: Float,
-        val timestamp: Long
-    )
-
-    private val signalPoints = mutableListOf<SignalPoint>()
-    private val movementEvents = mutableListOf<MovementEvent>()
-
-    /*
-     * Current sensing position.
-     *
-     * This represents the zone currently being monitored.
-     * It can be changed by tapping the square map.
-     */
-    private var sensingX = 0.50f
-    private var sensingY = 0.50f
-
-    /*
-     * RSSI baseline used for movement detection.
-     */
-    private var baselineRssi: Float? = null
-
-    private var lastRssi: Float? = null
-
-    /*
-     * Prevents a new movement event from being generated
-     * for every single RSSI sample.
-     */
-    private var lastMovementTime = 0L
-
-    /*
-     * How much RSSI must change before we consider it
-     * a meaningful environmental disturbance.
-     */
-    private val movementThreshold = 6f
-
-    /*
-     * Minimum time between movement events.
-     */
-    private val movementCooldown = 1200L
-
-    private val roomPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val wallPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val heatPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val routerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    init {
-
-        setBackgroundColor(Color.rgb(5, 10, 16))
-
-        roomPaint.style = Paint.Style.FILL
-        roomPaint.color = Color.rgb(20, 28, 38)
-
-        gridPaint.style = Paint.Style.STROKE
-        gridPaint.strokeWidth = 1f
-        gridPaint.color = Color.argb(
-            55,
-            255,
-            255,
-            255
-        )
-
-        wallPaint.style = Paint.Style.STROKE
-        wallPaint.strokeWidth = 4f
-        wallPaint.color = Color.argb(
-            220,
-            230,
-            235,
-            240
-        )
-
-        heatPaint.style = Paint.Style.FILL
-
-        pointPaint.style = Paint.Style.FILL
-
-        routerPaint.style = Paint.Style.FILL
-
-        textPaint.color = Color.WHITE
-        textPaint.textSize = 18f
-        textPaint.typeface = Typeface.create(
-            Typeface.DEFAULT,
-            Typeface.BOLD
-        )
-    }
-
-    /*
-     * Receives a Wi-Fi signal measurement.
-     *
-     * Call this from MainActivity every time a new RSSI
-     * value is available.
-     */
-    fun addSignalSample(rssi: Int) {
-
-        if (rssi <= -100) {
-            return
-        }
-
-        val now = System.currentTimeMillis()
-
-        /*
-         * Establish the initial baseline.
-         */
-        if (baselineRssi == null) {
-            baselineRssi = rssi.toFloat()
-            lastRssi = rssi.toFloat()
-
-            addSignalPoint(
-                rssi = rssi,
-                timestamp = now
-            )
-
-            return
-        }
-
-        val previous = lastRssi ?: rssi.toFloat()
-
-        /*
-         * Slowly adapt the baseline so normal Wi-Fi drift
-         * does not permanently look like movement.
-         */
-        val baseline = baselineRssi ?: rssi.toFloat()
-
-        baselineRssi =
-            baseline * 0.95f +
-            rssi.toFloat() * 0.05f
-
-        val changeFromBaseline =
-            abs(rssi - baseline)
-
-        val changeFromPrevious =
-            abs(rssi - previous)
-
-        /*
-         * Record normal signal information.
-         */
-        addSignalPoint(
-            rssi = rssi,
-            timestamp = now
-        )
-
-        /*
-         * Detect a meaningful disturbance.
-         */
-        val movementDetected =
-            changeFromBaseline >= movementThreshold ||
-            changeFromPrevious >= movementThreshold
-
-        if (
-            movementDetected &&
-            now - lastMovementTime >= movementCooldown
-        ) {
-
-            val movementStrength =
-                max(
-                    changeFromBaseline,
-                    changeFromPrevious
-                )
-
-            movementEvents.add(
-                MovementEvent(
-                    x = sensingX,
-                    y = sensingY,
-                    change = movementStrength,
-                    timestamp = now
-                )
-            )
-
-            lastMovementTime = now
-        }
-
-        lastRssi = rssi.toFloat()
-
-        cleanupOldEvents()
-
-        invalidate()
-    }
-
-    /*
-     * Compatibility with the existing MainActivity.
-     *
-     * Existing code can continue calling addMeasurement().
-     */
-    fun addMeasurement(
-        x: Float,
-        y: Float,
-        value: Float
-    ) {
-
-        sensingX = x.coerceIn(0f, 1f)
-        sensingY = y.coerceIn(0f, 1f)
-
-        val rssi =
-            ((value / 2f) - 100f).toInt()
-
-        addSignalSample(rssi)
-    }
-
-    /*
-     * Changes the current sensing zone.
-     */
-    fun setSensingPosition(
-        x: Float,
-        y: Float
-    ) {
-
-        sensingX =
-            x.coerceIn(0f, 1f)
-
-        sensingY =
-            y.coerceIn(0f, 1f)
-
-        invalidate()
-    }
-
-    /*
-     * Clears the complete scan.
-     */
-    fun clearMeasurements() {
-
-        signalPoints.clear()
-        movementEvents.clear()
-
-        baselineRssi = null
-        lastRssi = null
-        lastMovementTime = 0L
-
-        invalidate()
-    }
-
-    /*
-     * Handles touches on the square room.
-     *
-     * Touching the map selects the current sensing zone.
-     */
-    override fun onTouchEvent(
-        event: MotionEvent
-    ): Boolean {
-
-        when (event.action) {
-
-            MotionEvent.ACTION_DOWN,
-            MotionEvent.ACTION_MOVE,
-            MotionEvent.ACTION_UP -> {
-
-                if (width > 0 && height > 0) {
-
-                    sensingX =
-                        (event.x / width.toFloat())
-                            .coerceIn(0f, 1f)
-
-                    sensingY =
-                        (event.y / height.toFloat())
-                            .coerceIn(0f, 1f)
-
-                    if (
-                        event.action ==
-                        MotionEvent.ACTION_UP
-                    ) {
-                        performClick()
-                    }
-
-                    invalidate()
-                }
-
-                return true
-            }
-        }
-
-        return true
-    }
-
-    override fun performClick(): Boolean {
-        super.performClick()
-        return true
-    }
-
-    private fun addSignalPoint(
-        rssi: Int,
-        timestamp: Long
-    ) {
-
-        val normalized =
-            ((rssi + 100f) / 60f)
-                .coerceIn(0f, 1f)
-
-        signalPoints.add(
-            SignalPoint(
-                x = sensingX,
-                y = sensingY,
-                strength = normalized,
-                timestamp = timestamp
-            )
-        )
-
-        /*
-         * Keep memory usage small.
-         */
-        if (signalPoints.size > 300) {
-            signalPoints.removeAt(0)
-        }
-    }
-
-    private fun cleanupOldEvents() {
-
-        val now = System.currentTimeMillis()
-
-        movementEvents.removeAll {
-            now - it.timestamp > 30000L
-        }
-    }
-
-    override fun onDraw(
-        canvas: Canvas
-    ) {
-
-        super.onDraw(canvas)
-
-        val w = width.toFloat()
-        val h = height.toFloat()
-
-        if (w <= 0f || h <= 0f) {
-            return
-        }
-
-        canvas.drawColor(
-            Color.rgb(5, 10, 16)
-        )
-
-        /*
-         * Keep the room square.
-         */
-        val size =
-            min(w, h) * 0.88f
-
-        val left =
-            (w - size) / 2f
-
-        val top =
-            (h - size) / 2f
-
-        val right =
-            left + size
-
-        val bottom =
-            top + size
-
-        drawRoom(
-            canvas,
-            left,
-            top,
-            right,
-            bottom
-        )
-
-        drawHeatmap(
-            canvas,
-            left,
-            top,
-            size
-        )
-
-        drawMovementEvents(
-            canvas,
-            left,
-            top,
-            size
-        )
-
-        drawRouter(
-            canvas,
-            left,
-            top,
-            size
-        )
-
-        drawSensingPosition(
-            canvas,
-            left,
-            top,
-            size
-        )
-
-        drawLabels(
-            canvas,
-            left,
-            top,
-            right,
-            bottom
-        )
-    }
-
-    private fun drawRoom(
-        canvas: Canvas,
-        left: Float,
-        top: Float,
-        right: Float,
-        bottom: Float
-    ) {
-
-        roomPaint.color =
-            Color.rgb(
-                18,
-                27,
-                38
-            )
-
-        canvas.drawRect(
-            left,
-            top,
-            right,
-            bottom,
-            roomPaint
-        )
-
-        /*
-         * Grid.
-         */
-        val divisions = 8
-
-        for (i in 1 until divisions) {
-
-            val x =
-                left +
-                (right - left) *
-                i / divisions.toFloat()
-
-            val y =
-                top +
-                (bottom - top) *
-                i / divisions.toFloat()
-
-            canvas.drawLine(
-                x,
-                top,
-                x,
-                bottom,
-                gridPaint
-            )
-
-            canvas.drawLine(
-                left,
-                y,
-                right,
-                y,
-                gridPaint
-            )
-        }
-
-        /*
-         * Outer walls.
-         */
-        canvas.drawRect(
-            left,
-            top,
-            right,
-            bottom,
-            wallPaint
-        )
-    }
-
-    private fun drawHeatmap(
-        canvas: Canvas,
-        left: Float,
-        top: Float,
-        size: Float
-    ) {
-
-        if (movementEvents.isEmpty()) {
-            return
-        }
-
-        val now =
-            System.currentTimeMillis()
-
-        for (event in movementEvents) {
-
-            val age =
-                now - event.timestamp
-
-            val fade =
-                (1f -
-                    age / 30000f)
-                    .coerceIn(0f, 1f)
-
-            val cx =
-                left +
-                event.x * size
-
-            val cy =
-                top +
-                event.y * size
-
-            val strength =
-                (event.change / 20f)
-                    .coerceIn(0f, 1f)
-
-            val color =
-                movementColor(
-                    strength
-                )
-
-            val radius =
-                size *
-                (0.13f +
-                    strength * 0.10f)
-
-            val centerAlpha =
-                (210f * fade)
-                    .toInt()
-                    .coerceIn(0, 255)
-
-            val middleAlpha =
-                (120f * fade)
-                    .toInt()
-                    .coerceIn(0, 255)
-
-            val gradient =
-                RadialGradient(
-                    cx,
-                    cy,
-                    radius,
-                    intArrayOf(
-                        withAlpha(
-                            color,
-                            centerAlpha
-                        ),
-                        withAlpha(
-                            color,
-                            middleAlpha
-                        ),
-                        Color.TRANSPARENT
-                    ),
-                    floatArrayOf(
-                        0f,
-                        0.45f,
-                        1f
-                    ),
-                    Shader.TileMode.CLAMP
-                )
-
-            heatPaint.shader =
-                gradient
-
-            canvas.drawCircle(
-                cx,
-                cy,
-                radius,
-                heatPaint
-            )
-
-            heatPaint.shader = null
-        }
-    }
-
-    private fun drawMovementEvents(
-        canvas: Canvas,
-        left: Float,
-        top: Float,
-        size: Float
-    ) {
-
-        val now =
-            System.currentTimeMillis()
-
-        for (event in movementEvents) {
-
-            val age =
-                now - event.timestamp
-
-            val fade =
-                (1f -
-                    age / 30000f)
-                    .coerceIn(0f, 1f)
-
-            val cx =
-                left +
-                event.x * size
-
-            val cy =
-                top +
-                event.y * size
-
-            val strength =
-                (event.change / 20f)
-                    .coerceIn(0f, 1f)
-
-            val color =
-                movementColor(
-                    strength
-                )
-
-            /*
-             * Outer glow.
-             */
-            pointPaint.color =
-                withAlpha(
-                    color,
-                    (110f * fade)
-                        .toInt()
-                )
-
-            canvas.drawCircle(
-                cx,
-                cy,
-                22f,
-                pointPaint
-            )
-
-            /*
-             * Main movement dot.
-             */
-            pointPaint.color =
-                withAlpha(
-                    color,
-                    (230f * fade)
-                        .toInt()
-                )
-
-            canvas.drawCircle(
-                cx,
-                cy,
-                11f,
-                pointPaint
-            )
-
-            /*
-             * White center.
-             */
-            pointPaint.color =
-                withAlpha(
-                    Color.WHITE,
-                    (230f * fade)
-                        .toInt()
-                )
-
-            canvas.drawCircle(
-                cx,
-                cy,
-                4f,
-                pointPaint
-            )
-        }
-
-        /*
-         * Continue animation while old events fade.
-         */
-        if (movementEvents.isNotEmpty()) {
-            postInvalidateDelayed(100)
-        }
-    }
-
-    private fun drawRouter(
-        canvas: Canvas,
-        left: Float,
-        top: Float,
-        size: Float
-    ) {
-
-        /*
-         * Assumed router position.
-         *
-         * Later we can let the user place the router.
-         */
-        val x =
-            left + size * 0.50f
-
-        val y =
-            top + size * 0.50f
-
-        routerPaint.color =
-            Color.argb(
-                80,
-                50,
-                140,
-                255
-            )
-
-        canvas.drawCircle(
-            x,
-            y,
-            28f,
-            routerPaint
-        )
-
-        routerPaint.color =
-            Color.rgb(
-                45,
-                140,
-                255
-            )
-
-        canvas.drawCircle(
-            x,
-            y,
-            12f,
-            routerPaint
-        )
-
-        pointPaint.color =
-            Color.WHITE
-
-        canvas.drawCircle(
-            x,
-            y,
-            4f,
-            pointPaint
-        )
-    }
-
-    private fun drawSensingPosition(
-        canvas: Canvas,
-        left: Float,
-        top: Float,
-        size: Float
-    ) {
-
-        val x =
-            left +
-            sensingX * size
-
-        val y =
-            top +
-            sensingY * size
-
-        /*
-         * Dashed-style targeting circle.
-         */
-        pointPaint.style =
-            Paint.Style.STROKE
-
-        pointPaint.strokeWidth =
-            3f
-
-        pointPaint.color =
-            Color.argb(
-                180,
-                255,
-                255,
-                255
-            )
-
-        canvas.drawCircle(
-            x,
-            y,
-            18f,
-            pointPaint
-        )
-
-        pointPaint.style =
-            Paint.Style.FILL
-
-        pointPaint.color =
-            Color.WHITE
-
-        canvas.drawCircle(
-            x,
-            y,
-            4f,
-            pointPaint
-        )
-    }
-
-    private fun drawLabels(
-        canvas: Canvas,
-        left: Float,
-        top: Float,
-        right: Float,
-        bottom: Float
-    ) {
-
-        textPaint.textSize = 20f
-        textPaint.color =
-            Color.WHITE
-
-        canvas.drawText(
-            "ROOM",
-            left + 12f,
-            top + 28f,
-            textPaint
-        )
-
-        textPaint.textSize = 14f
-        textPaint.color =
-            Color.argb(
-                180,
-                220,
-                230,
-                240
-            )
-
-        canvas.drawText(
-            "MOVEMENT / SIGNAL DISTURBANCE",
-            left + 12f,
-            bottom - 12f,
-            textPaint
-        )
-    }
-
-    private fun movementColor(
-        strength: Float
-    ): Int {
-
-        return when {
-
-            strength >= 0.75f ->
-                Color.RED
-
-            strength >= 0.50f ->
-                Color.rgb(
-                    255,
-                    130,
-                    0
-                )
-
-            strength >= 0.25f ->
-                Color.YELLOW
-
-            else ->
-                Color.GREEN
-        }
-    }
-
-    private fun withAlpha(
-        color: Int,
-        alpha: Int
-    ): Int {
-
-        return Color.argb(
-            alpha.coerceIn(0, 255),
-            Color.red(color),
-            Color.green(color),
-            Color.blue(color)
-        )
-    }
-}
+<?xml version="1.0" encoding="utf-8"?>
+
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#071018">
+
+    <!-- TOP BAR -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp">
+
+        <TextView
+            android:id="@+id/backButton"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:gravity="center"
+            android:text="‹"
+            android:textColor="#FFFFFF"
+            android:textSize="36sp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingStart="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Wi-Fi Scan"
+                android:textColor="#FFFFFF"
+                android:textSize="21sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/scanSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Room signal mapping"
+                android:textColor="#78909C"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/helpButton"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:gravity="center"
+            android:text="?"
+            android:textColor="#B8C7D1"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/menuButton"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:gravity="center"
+            android:text="⋮"
+            android:textColor="#B8C7D1"
+            android:textSize="25sp" />
+
+    </LinearLayout>
+
+    <!-- SCAN STATUS -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="92dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="#101C25"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/scanIcon"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:gravity="center"
+            android:text="⌁"
+            android:textColor="#39E58C"
+            android:textSize="30sp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingStart="12dp">
+
+            <TextView
+                android:id="@+id/status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Ready to scan"
+                android:textColor="#FFFFFF"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/scanDescription"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Measure signal strength"
+                android:textColor="#8195A2"
+                android:textSize="13sp"
+                android:layout_marginTop="3dp" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/scanTimer"
+            android:layout_width="70dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="00:00"
+            android:textColor="#39E58C"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+    </LinearLayout>
+
+    <!-- HEATMAP TITLE -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Signal Heatmap"
+            android:textColor="#FFFFFF"
+            android:textSize="19sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/pointCounter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 points"
+            android:textColor="#8195A2"
+            android:textSize="13sp" />
+
+    </LinearLayout>
+
+    <!-- MAP -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="#0C151D">
+
+        <com.wifivision.app.HeatmapView
+            android:id="@+id/heatmap"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/mapHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="12dp"
+            android:text="Tap the room to place the router"
+            android:textColor="#9AAAB5"
+            android:textSize="12sp" />
+
+    </FrameLayout>
+
+    <!-- LEGEND -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WEAK"
+            android:textColor="#8195A2"
+            android:textSize="10sp" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="8dp"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:layout_marginEnd="10dp"
+            android:background="#2367FF" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="STRONG"
+            android:textColor="#8195A2"
+            android:textSize="10sp" />
+
+    </LinearLayout>
+
+    <!-- STATISTICS -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="76dp"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/weakestValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="-- dBm"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Weakest"
+                android:textColor="#71838F"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/averageValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="-- dBm"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Average"
+                android:textColor="#71838F"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/strongestValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="-- dBm"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Strongest"
+                android:textColor="#71838F"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- CONTROLS -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp">
+
+        <Button
+            android:id="@+id/sensingButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="START SCAN"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/measureButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="MEASURE"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/clearButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="CLEAR"
+            android:textSize="13sp" />
+
+    </LinearLayout>
+
+</LinearLayout>
