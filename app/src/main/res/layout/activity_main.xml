@@ -98,6 +98,28 @@
     android:layout_height="180dp"
     android:layout_marginTop="12dp" />
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Movement Heatmap"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginTop="30dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tap a position in the room, then press MEASURE WI-FI"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:layout_marginTop="6dp" />
+
+        <com.wifivision.app.HeatmapView
+            android:id="@+id/heatmap"
+            android:layout_width="match_parent"
+            android:layout_height="420dp"
+            android:layout_marginTop="12dp" />
+
+        <TextView
             android:id="@+id/sensingResult"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var sensingButton: Button
     private lateinit var sensingResult: TextView
     private lateinit var signalWave: SignalWaveView
+    private lateinit var heatmap: HeatmapView
     private lateinit var stability: TextView
     private lateinit var fluctuation: TextView
 
@@ -62,6 +63,19 @@ class MainActivity : Activity() {
         stability = findViewById(R.id.stability)
         fluctuation = findViewById(R.id.fluctuation)
         signalWave = findViewById(R.id.signalWave)
+        heatmap = findViewById(R.id.heatmap)
+        heatmap.setOnTouchListener { view, event ->
+
+    if (event.action == android.view.MotionEvent.ACTION_UP) {
+
+        val x = event.x / view.width.toFloat()
+        val y = event.y / view.height.toFloat()
+
+        measureWifiAtPoint(x, y)
+    }
+
+    true
+}
         measureButton.setOnClickListener {
             measureWifi()
         }
@@ -327,4 +341,37 @@ signalWave.updateSignal(waveSignal.toFloat())
     }
 }
 
+}
+
+private fun measureWifiAtPoint(x: Float, y: Float) {
+
+    if (!wifiManager.isWifiEnabled) {
+        status.text = "Wi-Fi is OFF"
+        return
+    }
+
+    try {
+        val info = wifiManager.connectionInfo
+        val currentRssi = info.rssi
+
+        if (currentRssi <= -100) {
+            status.text = "RSSI unavailable"
+            return
+        }
+
+        val strength =
+            ((currentRssi + 100) * 2)
+                .coerceIn(0, 100)
+
+        heatmap.addMeasurement(
+            x,
+            y,
+            strength.toFloat()
+        )
+
+        status.text = "Heatmap point measured: $currentRssi dBm"
+
+    } catch (_: SecurityException) {
+        status.text = "Wi-Fi permission required"
+    }
 }
