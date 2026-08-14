@@ -71,6 +71,50 @@ class HeatmapView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun addSignalSample(rssi: Int) {
+        val safeRssi = rssi.coerceIn(-100, -30)
+
+        val previous = measurements.lastOrNull()
+
+        if (previous != null) {
+            val change = kotlin.math.abs(
+                safeRssi - previous.rssi
+            )
+
+            // Ignore tiny natural Wi-Fi fluctuations.
+            if (change < 4) {
+                return
+            }
+        }
+
+        // Estimate a changing position for the detected event.
+        val index = measurements.size
+
+        val x = (
+            0.18f +
+            ((index * 37) % 64) / 100f
+        ).coerceIn(0.10f, 0.90f)
+
+        val y = (
+            0.18f +
+            ((index * 53) % 64) / 100f
+        ).coerceIn(0.10f, 0.88f)
+
+        measurements.add(
+            Measurement(
+                x,
+                y,
+                safeRssi
+            )
+        )
+
+        if (measurements.size > 100) {
+            measurements.removeAt(0)
+        }
+
+        invalidate()
+    }
+
     fun clearMeasurements() {
         measurements.clear()
         invalidate()

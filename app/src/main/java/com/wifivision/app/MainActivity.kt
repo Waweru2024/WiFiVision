@@ -118,8 +118,8 @@ class MainActivity : Activity() {
 
         try {
             val info = wifiManager.connectionInfo
-
             val currentSsid = info.ssid
+
                 ?.removeSurrounding("\"")
                 ?.takeIf {
                     it.isNotBlank() && it != "<unknown ssid>"
@@ -221,6 +221,8 @@ private fun collectSignalSample() {
     try {
         val info = wifiManager.connectionInfo
         val currentRssi = info.rssi
+
+        heatmap.addSignalSample(currentRssi)
 
         if (currentRssi <= -100) {
             sensingResult.text = "⚪ Signal unavailable"
