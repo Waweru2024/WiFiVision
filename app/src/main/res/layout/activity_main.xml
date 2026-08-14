@@ -1,175 +1,863 @@
-<?xml version="1.0" encoding="utf-8"?>
+package com.wifivision.app
 
-<ScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
+import android.content.Context
+import android.graphics.*
+import android.util.AttributeSet
+import android.view.MotionEvent
+import android.view.View
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp">
+class HeatmapView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="WiFi Vision"
-            android:textSize="40sp"
-            android:textStyle="bold" />
+    private data class SignalPoint(
+        val x: Float,
+        val y: Float,
+        val strength: Float,
+        val timestamp: Long
+    )
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Wi-Fi presence &amp; movement sensing"
-            android:textSize="18sp"
-            android:layout_marginTop="4dp" />
+    private data class MovementEvent(
+        val x: Float,
+        val y: Float,
+        val change: Float,
+        val timestamp: Long
+    )
 
-        <TextView
-            android:id="@+id/status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Ready"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:layout_marginTop="35dp"
-            android:layout_marginBottom="30dp" />
+    private val signalPoints = mutableListOf<SignalPoint>()
+    private val movementEvents = mutableListOf<MovementEvent>()
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Connected network"
-            android:textSize="28sp"
-            android:textStyle="bold" />
+    /*
+     * Current sensing position.
+     *
+     * This represents the zone currently being monitored.
+     * It can be changed by tapping the square map.
+     */
+    private var sensingX = 0.50f
+    private var sensingY = 0.50f
 
-        <TextView
-            android:id="@+id/ssid"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="SSID: Unknown"
-            android:textSize="24sp"
-            android:layout_marginTop="12dp" />
+    /*
+     * RSSI baseline used for movement detection.
+     */
+    private var baselineRssi: Float? = null
 
-        <TextView
-            android:id="@+id/rssi"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="RSSI: unavailable"
-            android:textSize="34sp"
-            android:textStyle="bold"
-            android:layout_marginTop="10dp" />
+    private var lastRssi: Float? = null
 
-        <TextView
-            android:id="@+id/quality"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Signal quality: unavailable"
-            android:textSize="20sp"
-            android:layout_marginTop="4dp" />
+    /*
+     * Prevents a new movement event from being generated
+     * for every single RSSI sample.
+     */
+    private var lastMovementTime = 0L
 
-        <Button
-            android:id="@+id/measureButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="MEASURE WI-FI"
-            android:textSize="18sp"
-            android:layout_marginTop="28dp" />
+    /*
+     * How much RSSI must change before we consider it
+     * a meaningful environmental disturbance.
+     */
+    private val movementThreshold = 6f
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Presence sensing"
-            android:textSize="28sp"
-            android:textStyle="bold"
-            android:layout_marginTop="38dp" />
+    /*
+     * Minimum time between movement events.
+     */
+    private val movementCooldown = 1200L
 
-<TextView
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:text="Wi-Fi Signal Wave"
-    android:textSize="22sp"
-    android:textStyle="bold"
-    android:layout_marginTop="20dp" />
+    private val roomPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val wallPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val heatPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val routerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-<com.wifivision.app.SignalWaveView
-    android:id="@+id/signalWave"
-    android:layout_width="match_parent"
-    android:layout_height="180dp"
-    android:layout_marginTop="12dp" />
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Movement Heatmap"
-            android:textSize="28sp"
-            android:textStyle="bold"
-            android:layout_marginTop="30dp" />
+    init {
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Tap a position in the room, then press MEASURE WI-FI"
-            android:textSize="16sp"
-            android:gravity="center"
-            android:layout_marginTop="6dp" />
+        setBackgroundColor(Color.rgb(5, 10, 16))
 
-        <com.wifivision.app.HeatmapView
-            android:id="@+id/heatmap"
-            android:layout_width="match_parent"
-            android:layout_height="420dp"
-            android:layout_marginTop="12dp" />
+        roomPaint.style = Paint.Style.FILL
+        roomPaint.color = Color.rgb(20, 28, 38)
 
-        <TextView
-            android:id="@+id/sensingResult"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Start sensing to monitor signal changes"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:padding="20dp"
-            android:layout_marginTop="15dp" />
+        gridPaint.style = Paint.Style.STROKE
+        gridPaint.strokeWidth = 1f
+        gridPaint.color = Color.argb(
+            55,
+            255,
+            255,
+            255
+        )
 
-        <TextView
-            android:id="@+id/stability"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Stability: --"
-            android:textSize="19sp"
-            android:layout_marginTop="12dp" />
+        wallPaint.style = Paint.Style.STROKE
+        wallPaint.strokeWidth = 4f
+        wallPaint.color = Color.argb(
+            220,
+            230,
+            235,
+            240
+        )
 
-        <TextView
-            android:id="@+id/fluctuation"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Fluctuation: --"
-            android:textSize="19sp"
-            android:layout_marginTop="6dp" />
+        heatPaint.style = Paint.Style.FILL
 
-        <Button
-            android:id="@+id/sensingButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="START SENSING"
-            android:textSize="18sp"
-            android:layout_marginTop="18dp" />
+        pointPaint.style = Paint.Style.FILL
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Nearby networks"
-            android:textSize="28sp"
-            android:textStyle="bold"
-            android:layout_marginTop="40dp" />
+        routerPaint.style = Paint.Style.FILL
 
-        <TextView
-            android:id="@+id/networks"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="No networks found."
-            android:textSize="19sp"
-            android:layout_marginTop="15dp" />
+        textPaint.color = Color.WHITE
+        textPaint.textSize = 18f
+        textPaint.typeface = Typeface.create(
+            Typeface.DEFAULT,
+            Typeface.BOLD
+        )
+    }
 
-    </LinearLayout>
+    /*
+     * Receives a Wi-Fi signal measurement.
+     *
+     * Call this from MainActivity every time a new RSSI
+     * value is available.
+     */
+    fun addSignalSample(rssi: Int) {
 
-</ScrollView>
+        if (rssi <= -100) {
+            return
+        }
+
+        val now = System.currentTimeMillis()
+
+        /*
+         * Establish the initial baseline.
+         */
+        if (baselineRssi == null) {
+            baselineRssi = rssi.toFloat()
+            lastRssi = rssi.toFloat()
+
+            addSignalPoint(
+                rssi = rssi,
+                timestamp = now
+            )
+
+            return
+        }
+
+        val previous = lastRssi ?: rssi.toFloat()
+
+        /*
+         * Slowly adapt the baseline so normal Wi-Fi drift
+         * does not permanently look like movement.
+         */
+        val baseline = baselineRssi ?: rssi.toFloat()
+
+        baselineRssi =
+            baseline * 0.95f +
+            rssi.toFloat() * 0.05f
+
+        val changeFromBaseline =
+            abs(rssi - baseline)
+
+        val changeFromPrevious =
+            abs(rssi - previous)
+
+        /*
+         * Record normal signal information.
+         */
+        addSignalPoint(
+            rssi = rssi,
+            timestamp = now
+        )
+
+        /*
+         * Detect a meaningful disturbance.
+         */
+        val movementDetected =
+            changeFromBaseline >= movementThreshold ||
+            changeFromPrevious >= movementThreshold
+
+        if (
+            movementDetected &&
+            now - lastMovementTime >= movementCooldown
+        ) {
+
+            val movementStrength =
+                max(
+                    changeFromBaseline,
+                    changeFromPrevious
+                )
+
+            movementEvents.add(
+                MovementEvent(
+                    x = sensingX,
+                    y = sensingY,
+                    change = movementStrength,
+                    timestamp = now
+                )
+            )
+
+            lastMovementTime = now
+        }
+
+        lastRssi = rssi.toFloat()
+
+        cleanupOldEvents()
+
+        invalidate()
+    }
+
+    /*
+     * Compatibility with the existing MainActivity.
+     *
+     * Existing code can continue calling addMeasurement().
+     */
+    fun addMeasurement(
+        x: Float,
+        y: Float,
+        value: Float
+    ) {
+
+        sensingX = x.coerceIn(0f, 1f)
+        sensingY = y.coerceIn(0f, 1f)
+
+        val rssi =
+            ((value / 2f) - 100f).toInt()
+
+        addSignalSample(rssi)
+    }
+
+    /*
+     * Changes the current sensing zone.
+     */
+    fun setSensingPosition(
+        x: Float,
+        y: Float
+    ) {
+
+        sensingX =
+            x.coerceIn(0f, 1f)
+
+        sensingY =
+            y.coerceIn(0f, 1f)
+
+        invalidate()
+    }
+
+    /*
+     * Clears the complete scan.
+     */
+    fun clearMeasurements() {
+
+        signalPoints.clear()
+        movementEvents.clear()
+
+        baselineRssi = null
+        lastRssi = null
+        lastMovementTime = 0L
+
+        invalidate()
+    }
+
+    /*
+     * Handles touches on the square room.
+     *
+     * Touching the map selects the current sensing zone.
+     */
+    override fun onTouchEvent(
+        event: MotionEvent
+    ): Boolean {
+
+        when (event.action) {
+
+            MotionEvent.ACTION_DOWN,
+            MotionEvent.ACTION_MOVE,
+            MotionEvent.ACTION_UP -> {
+
+                if (width > 0 && height > 0) {
+
+                    sensingX =
+                        (event.x / width.toFloat())
+                            .coerceIn(0f, 1f)
+
+                    sensingY =
+                        (event.y / height.toFloat())
+                            .coerceIn(0f, 1f)
+
+                    if (
+                        event.action ==
+                        MotionEvent.ACTION_UP
+                    ) {
+                        performClick()
+                    }
+
+                    invalidate()
+                }
+
+                return true
+            }
+        }
+
+        return true
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    private fun addSignalPoint(
+        rssi: Int,
+        timestamp: Long
+    ) {
+
+        val normalized =
+            ((rssi + 100f) / 60f)
+                .coerceIn(0f, 1f)
+
+        signalPoints.add(
+            SignalPoint(
+                x = sensingX,
+                y = sensingY,
+                strength = normalized,
+                timestamp = timestamp
+            )
+        )
+
+        /*
+         * Keep memory usage small.
+         */
+        if (signalPoints.size > 300) {
+            signalPoints.removeAt(0)
+        }
+    }
+
+    private fun cleanupOldEvents() {
+
+        val now = System.currentTimeMillis()
+
+        movementEvents.removeAll {
+            now - it.timestamp > 30000L
+        }
+    }
+
+    override fun onDraw(
+        canvas: Canvas
+    ) {
+
+        super.onDraw(canvas)
+
+        val w = width.toFloat()
+        val h = height.toFloat()
+
+        if (w <= 0f || h <= 0f) {
+            return
+        }
+
+        canvas.drawColor(
+            Color.rgb(5, 10, 16)
+        )
+
+        /*
+         * Keep the room square.
+         */
+        val size =
+            min(w, h) * 0.88f
+
+        val left =
+            (w - size) / 2f
+
+        val top =
+            (h - size) / 2f
+
+        val right =
+            left + size
+
+        val bottom =
+            top + size
+
+        drawRoom(
+            canvas,
+            left,
+            top,
+            right,
+            bottom
+        )
+
+        drawHeatmap(
+            canvas,
+            left,
+            top,
+            size
+        )
+
+        drawMovementEvents(
+            canvas,
+            left,
+            top,
+            size
+        )
+
+        drawRouter(
+            canvas,
+            left,
+            top,
+            size
+        )
+
+        drawSensingPosition(
+            canvas,
+            left,
+            top,
+            size
+        )
+
+        drawLabels(
+            canvas,
+            left,
+            top,
+            right,
+            bottom
+        )
+    }
+
+    private fun drawRoom(
+        canvas: Canvas,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ) {
+
+        roomPaint.color =
+            Color.rgb(
+                18,
+                27,
+                38
+            )
+
+        canvas.drawRect(
+            left,
+            top,
+            right,
+            bottom,
+            roomPaint
+        )
+
+        /*
+         * Grid.
+         */
+        val divisions = 8
+
+        for (i in 1 until divisions) {
+
+            val x =
+                left +
+                (right - left) *
+                i / divisions.toFloat()
+
+            val y =
+                top +
+                (bottom - top) *
+                i / divisions.toFloat()
+
+            canvas.drawLine(
+                x,
+                top,
+                x,
+                bottom,
+                gridPaint
+            )
+
+            canvas.drawLine(
+                left,
+                y,
+                right,
+                y,
+                gridPaint
+            )
+        }
+
+        /*
+         * Outer walls.
+         */
+        canvas.drawRect(
+            left,
+            top,
+            right,
+            bottom,
+            wallPaint
+        )
+    }
+
+    private fun drawHeatmap(
+        canvas: Canvas,
+        left: Float,
+        top: Float,
+        size: Float
+    ) {
+
+        if (movementEvents.isEmpty()) {
+            return
+        }
+
+        val now =
+            System.currentTimeMillis()
+
+        for (event in movementEvents) {
+
+            val age =
+                now - event.timestamp
+
+            val fade =
+                (1f -
+                    age / 30000f)
+                    .coerceIn(0f, 1f)
+
+            val cx =
+                left +
+                event.x * size
+
+            val cy =
+                top +
+                event.y * size
+
+            val strength =
+                (event.change / 20f)
+                    .coerceIn(0f, 1f)
+
+            val color =
+                movementColor(
+                    strength
+                )
+
+            val radius =
+                size *
+                (0.13f +
+                    strength * 0.10f)
+
+            val centerAlpha =
+                (210f * fade)
+                    .toInt()
+                    .coerceIn(0, 255)
+
+            val middleAlpha =
+                (120f * fade)
+                    .toInt()
+                    .coerceIn(0, 255)
+
+            val gradient =
+                RadialGradient(
+                    cx,
+                    cy,
+                    radius,
+                    intArrayOf(
+                        withAlpha(
+                            color,
+                            centerAlpha
+                        ),
+                        withAlpha(
+                            color,
+                            middleAlpha
+                        ),
+                        Color.TRANSPARENT
+                    ),
+                    floatArrayOf(
+                        0f,
+                        0.45f,
+                        1f
+                    ),
+                    Shader.TileMode.CLAMP
+                )
+
+            heatPaint.shader =
+                gradient
+
+            canvas.drawCircle(
+                cx,
+                cy,
+                radius,
+                heatPaint
+            )
+
+            heatPaint.shader = null
+        }
+    }
+
+    private fun drawMovementEvents(
+        canvas: Canvas,
+        left: Float,
+        top: Float,
+        size: Float
+    ) {
+
+        val now =
+            System.currentTimeMillis()
+
+        for (event in movementEvents) {
+
+            val age =
+                now - event.timestamp
+
+            val fade =
+                (1f -
+                    age / 30000f)
+                    .coerceIn(0f, 1f)
+
+            val cx =
+                left +
+                event.x * size
+
+            val cy =
+                top +
+                event.y * size
+
+            val strength =
+                (event.change / 20f)
+                    .coerceIn(0f, 1f)
+
+            val color =
+                movementColor(
+                    strength
+                )
+
+            /*
+             * Outer glow.
+             */
+            pointPaint.color =
+                withAlpha(
+                    color,
+                    (110f * fade)
+                        .toInt()
+                )
+
+            canvas.drawCircle(
+                cx,
+                cy,
+                22f,
+                pointPaint
+            )
+
+            /*
+             * Main movement dot.
+             */
+            pointPaint.color =
+                withAlpha(
+                    color,
+                    (230f * fade)
+                        .toInt()
+                )
+
+            canvas.drawCircle(
+                cx,
+                cy,
+                11f,
+                pointPaint
+            )
+
+            /*
+             * White center.
+             */
+            pointPaint.color =
+                withAlpha(
+                    Color.WHITE,
+                    (230f * fade)
+                        .toInt()
+                )
+
+            canvas.drawCircle(
+                cx,
+                cy,
+                4f,
+                pointPaint
+            )
+        }
+
+        /*
+         * Continue animation while old events fade.
+         */
+        if (movementEvents.isNotEmpty()) {
+            postInvalidateDelayed(100)
+        }
+    }
+
+    private fun drawRouter(
+        canvas: Canvas,
+        left: Float,
+        top: Float,
+        size: Float
+    ) {
+
+        /*
+         * Assumed router position.
+         *
+         * Later we can let the user place the router.
+         */
+        val x =
+            left + size * 0.50f
+
+        val y =
+            top + size * 0.50f
+
+        routerPaint.color =
+            Color.argb(
+                80,
+                50,
+                140,
+                255
+            )
+
+        canvas.drawCircle(
+            x,
+            y,
+            28f,
+            routerPaint
+        )
+
+        routerPaint.color =
+            Color.rgb(
+                45,
+                140,
+                255
+            )
+
+        canvas.drawCircle(
+            x,
+            y,
+            12f,
+            routerPaint
+        )
+
+        pointPaint.color =
+            Color.WHITE
+
+        canvas.drawCircle(
+            x,
+            y,
+            4f,
+            pointPaint
+        )
+    }
+
+    private fun drawSensingPosition(
+        canvas: Canvas,
+        left: Float,
+        top: Float,
+        size: Float
+    ) {
+
+        val x =
+            left +
+            sensingX * size
+
+        val y =
+            top +
+            sensingY * size
+
+        /*
+         * Dashed-style targeting circle.
+         */
+        pointPaint.style =
+            Paint.Style.STROKE
+
+        pointPaint.strokeWidth =
+            3f
+
+        pointPaint.color =
+            Color.argb(
+                180,
+                255,
+                255,
+                255
+            )
+
+        canvas.drawCircle(
+            x,
+            y,
+            18f,
+            pointPaint
+        )
+
+        pointPaint.style =
+            Paint.Style.FILL
+
+        pointPaint.color =
+            Color.WHITE
+
+        canvas.drawCircle(
+            x,
+            y,
+            4f,
+            pointPaint
+        )
+    }
+
+    private fun drawLabels(
+        canvas: Canvas,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ) {
+
+        textPaint.textSize = 20f
+        textPaint.color =
+            Color.WHITE
+
+        canvas.drawText(
+            "ROOM",
+            left + 12f,
+            top + 28f,
+            textPaint
+        )
+
+        textPaint.textSize = 14f
+        textPaint.color =
+            Color.argb(
+                180,
+                220,
+                230,
+                240
+            )
+
+        canvas.drawText(
+            "MOVEMENT / SIGNAL DISTURBANCE",
+            left + 12f,
+            bottom - 12f,
+            textPaint
+        )
+    }
+
+    private fun movementColor(
+        strength: Float
+    ): Int {
+
+        return when {
+
+            strength >= 0.75f ->
+                Color.RED
+
+            strength >= 0.50f ->
+                Color.rgb(
+                    255,
+                    130,
+                    0
+                )
+
+            strength >= 0.25f ->
+                Color.YELLOW
+
+            else ->
+                Color.GREEN
+        }
+    }
+
+    private fun withAlpha(
+        color: Int,
+        alpha: Int
+    ): Int {
+
+        return Color.argb(
+            alpha.coerceIn(0, 255),
+            Color.red(color),
+            Color.green(color),
+            Color.blue(color)
+        )
+    }
+}
