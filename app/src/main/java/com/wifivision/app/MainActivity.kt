@@ -341,37 +341,40 @@ signalWave.updateSignal(waveSignal.toFloat())
     }
 }
 
-}
+    private fun measureWifiAtPoint(x: Float, y: Float) {
 
-private fun measureWifiAtPoint(x: Float, y: Float) {
-
-    if (!wifiManager.isWifiEnabled) {
-        status.text = "Wi-Fi is OFF"
-        return
-    }
-
-    try {
-        val info = wifiManager.connectionInfo
-        val currentRssi = info.rssi
-
-        if (currentRssi <= -100) {
-            status.text = "RSSI unavailable"
+        if (!wifiManager.isWifiEnabled) {
+            status.text = "Wi-Fi is OFF"
             return
         }
 
-        val strength =
-            ((currentRssi + 100) * 2)
+        try {
+            val info = wifiManager.connectionInfo
+            val currentRssi = info.rssi
+
+            if (currentRssi <= -100) {
+                status.text = "RSSI unavailable"
+                return
+            }
+
+            val strength = ((currentRssi + 100) * 2)
                 .coerceIn(0, 100)
 
-        heatmap.addMeasurement(
-            x,
-            y,
-            strength.toFloat()
-        )
+            heatmap.addMeasurement(
+                x,
+                y,
+                strength.toFloat()
+            )
 
-        status.text = "Heatmap point measured: $currentRssi dBm"
+            status.text =
+                "Heatmap point measured: $currentRssi dBm"
 
-    } catch (_: SecurityException) {
-        status.text = "Wi-Fi permission required"
+        } catch (_: SecurityException) {
+            status.text = "Wi-Fi permission required"
+
+        } catch (_: Exception) {
+            status.text = "Unable to read Wi-Fi signal"
+        }
     }
+
 }
